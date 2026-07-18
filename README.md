@@ -66,19 +66,17 @@ Then:
 
 ## 📸 Screenshots
 
-> Add your own screenshots here before submitting:
-
-- Landing page
-- Wallet connected + balance displayed
-- A successful testnet Send transaction (with hash)
-- The Split Bill result (multiple payments sent)
-
-<!--
+**Landing**
 ![Landing](./screenshots/landing.png)
+
+**Wallet connected + balance**
 ![Connected](./screenshots/connected.png)
+
+**Successful testnet Send (with transaction hash)**
 ![Send success](./screenshots/send.png)
+
+**Split Bill — paid everyone at once**
 ![Split Bill](./screenshots/split.png)
--->
 
 ---
 
