@@ -8,6 +8,8 @@ A small, focused payments toolkit built on the **Stellar** blockchain (testnet).
 
 Built for the **Stellar Journey to Mastery — White Belt (Level 1)** challenge.
 
+**🌐 Live demo:** https://shakhan-stellar.vercel.app
+
 > ⚠️ Runs on **Stellar Testnet** only. No real funds are ever used.
 
 ---
