@@ -16,10 +16,11 @@ import PaymentForm from '@/components/PaymentForm';
 import TransactionHistory from '@/components/TransactionHistory';
 import TipJar from '@/components/TipJar';
 import SplitBill from '@/components/SplitBill';
-import { FaPaperPlane, FaQrcode, FaUsers, FaWallet, FaCopy, FaCheck } from 'react-icons/fa';
+import FundCampaign from '@/components/FundCampaign';
+import { FaPaperPlane, FaQrcode, FaUsers, FaWallet, FaCopy, FaCheck, FaHandHoldingHeart } from 'react-icons/fa';
 import { MdLogout } from 'react-icons/md';
 
-type Tab = 'send' | 'tip' | 'split';
+type Tab = 'send' | 'tip' | 'split' | 'fund';
 
 export default function Home() {
   const [publicKey, setPublicKey] = useState('');
@@ -60,6 +61,7 @@ export default function Home() {
     { id: 'send', label: 'Send', icon: <FaPaperPlane /> },
     { id: 'tip', label: 'Tip Jar', icon: <FaQrcode /> },
     { id: 'split', label: 'Split Bill', icon: <FaUsers /> },
+    { id: 'fund', label: 'Fund', icon: <FaHandHoldingHeart /> },
   ];
 
   return (
@@ -125,12 +127,13 @@ export default function Home() {
               <h1 className="text-4xl md:text-6xl font-black text-white mb-5 leading-tight">
                 One wallet,{' '}
                 <span className="bg-gradient-to-r from-neutral-100 to-neutral-400 bg-clip-text text-transparent">
-                  three tools
+                  four tools
                 </span>
               </h1>
               <p className="text-white/60 text-lg mb-8">
-                Send XLM, receive tips with a QR code, or split a bill with friends —
-                all on Stellar&apos;s fast, near-free network.
+                Send XLM, receive tips with a QR code, split a bill with friends, or
+                back a campaign through a smart contract — all on Stellar&apos;s fast,
+                near-free network.
               </p>
               <button
                 onClick={connect}
@@ -146,11 +149,12 @@ export default function Home() {
             </div>
 
             {/* Tool showcase */}
-            <div className="grid md:grid-cols-3 gap-5 max-w-4xl mx-auto">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5 max-w-5xl mx-auto">
               {[
                 { icon: '💸', title: 'Send', desc: 'Send XLM to any address with a memo and instant confirmation.' },
                 { icon: '🫙', title: 'Tip Jar', desc: 'Turn your wallet into a shareable QR tip jar anyone can scan.' },
                 { icon: '🧮', title: 'Split Bill', desc: 'Split a total evenly across friends and pay everyone at once.' },
+                { icon: '🫱', title: 'Fund', desc: 'Back a crowdfunding campaign by calling a Soroban smart contract.' },
               ].map((t) => (
                 <div
                   key={t.title}
@@ -196,6 +200,7 @@ export default function Home() {
                 {tab === 'send' && <PaymentForm publicKey={publicKey} onSuccess={handlePaymentSuccess} />}
                 {tab === 'tip' && <TipJar publicKey={publicKey} />}
                 {tab === 'split' && <SplitBill publicKey={publicKey} onSuccess={handlePaymentSuccess} />}
+                {tab === 'fund' && <FundCampaign publicKey={publicKey} onSuccess={handlePaymentSuccess} />}
               </div>
 
               <div key={`history-${refreshKey}`}>
