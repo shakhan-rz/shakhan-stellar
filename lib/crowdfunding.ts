@@ -43,11 +43,6 @@ function getKit(): StellarWalletsKit {
   return signingKit;
 }
 
-/** Let the user pick which wallet signs contract calls (optional). */
-export function selectContractWallet(id: string) {
-  getKit().setWallet(id);
-}
-
 // ---- amount helpers -------------------------------------------------------
 
 export function xlmToStroops(value: string): bigint {
@@ -128,7 +123,7 @@ export async function getContribution(source: string): Promise<bigint> {
  */
 export async function contribute(donor: string, amountXlm: string): Promise<string> {
   const amount = xlmToStroops(amountXlm);
-  if (amount <= 0n) throw new Error('مقدار باید بزرگ‌تر از صفر باشد');
+  if (amount <= 0n) throw new Error('Amount must be greater than zero.');
 
   const account = await server.getAccount(donor);
   const op = contract.call(
@@ -160,7 +155,7 @@ export async function contribute(donor: string, amountXlm: string): Promise<stri
 
   const sent = await server.sendTransaction(signed as StellarSdk.Transaction);
   if (sent.status === 'ERROR') {
-    throw new Error('ارسال تراکنش به شبکه ناموفق بود');
+    throw new Error('The network rejected the transaction.');
   }
 
   const hash = sent.hash;
@@ -168,14 +163,14 @@ export async function contribute(donor: string, amountXlm: string): Promise<stri
   let result = await server.getTransaction(hash);
   while (result.status === StellarSdk.rpc.Api.GetTransactionStatus.NOT_FOUND) {
     if (Date.now() - started > 40000) {
-      throw new Error('زمان انتظار برای تأیید تراکنش تمام شد');
+      throw new Error('Timed out waiting for the transaction to confirm.');
     }
     await new Promise((r) => setTimeout(r, 2000));
     result = await server.getTransaction(hash);
   }
 
   if (result.status === StellarSdk.rpc.Api.GetTransactionStatus.FAILED) {
-    throw new Error('تراکنش روی شبکه ناموفق بود');
+    throw new Error('The transaction failed on-chain.');
   }
 
   return hash;
