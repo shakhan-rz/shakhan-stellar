@@ -16,7 +16,7 @@
 
 import { useState, useEffect } from 'react';
 import { stellar } from '@/lib/stellar-helper';
-import { FaHistory, FaSync, FaArrowUp, FaArrowDown, FaExternalLinkAlt } from 'react-icons/fa';
+import { FaHistory, FaSync, FaArrowUp, FaArrowDown, FaExternalLinkAlt, FaFileContract } from 'react-icons/fa';
 import { Card, EmptyState } from './example-components';
 
 interface Transaction {
@@ -129,7 +129,8 @@ export default function TransactionHistory({ publicKey }: TransactionHistoryProp
         <div className="space-y-3">
           {transactions.map((tx) => {
             const outgoing = isOutgoing(tx);
-            
+            const isContractCall = tx.type === 'invoke_host_function';
+
             return (
               <div
                 key={tx.id}
@@ -138,15 +139,17 @@ export default function TransactionHistory({ publicKey }: TransactionHistoryProp
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      outgoing 
-                        ? 'bg-red-500/20 text-red-400' 
+                      isContractCall
+                        ? 'bg-purple-500/20 text-purple-400'
+                        : outgoing
+                        ? 'bg-red-500/20 text-red-400'
                         : 'bg-green-500/20 text-green-400'
                     }`}>
-                      {outgoing ? <FaArrowUp /> : <FaArrowDown />}
+                      {isContractCall ? <FaFileContract /> : outgoing ? <FaArrowUp /> : <FaArrowDown />}
                     </div>
                     <div>
                       <p className="text-white font-semibold">
-                        {outgoing ? 'Sent' : 'Received'}
+                        {isContractCall ? 'Contract Call' : outgoing ? 'Sent' : 'Received'}
                       </p>
                       {tx.amount && (
                         <p className={`text-lg font-bold ${
@@ -168,16 +171,22 @@ export default function TransactionHistory({ publicKey }: TransactionHistoryProp
                   </a>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <p className="text-white/40 text-xs mb-1">From</p>
-                    <p className="text-white/80 font-mono">{formatAddress(tx.from)}</p>
+                {isContractCall ? (
+                  <p className="text-white/60 text-sm">
+                    Soroban smart contract invocation
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-white/40 text-xs mb-1">From</p>
+                      <p className="text-white/80 font-mono">{formatAddress(tx.from)}</p>
+                    </div>
+                    <div>
+                      <p className="text-white/40 text-xs mb-1">To</p>
+                      <p className="text-white/80 font-mono">{formatAddress(tx.to)}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-white/40 text-xs mb-1">To</p>
-                    <p className="text-white/80 font-mono">{formatAddress(tx.to)}</p>
-                  </div>
-                </div>
+                )}
 
                 <div className="flex justify-between items-center mt-3 pt-3 border-t border-white/10">
                   <p className="text-white/40 text-xs">{formatDate(tx.createdAt)}</p>
