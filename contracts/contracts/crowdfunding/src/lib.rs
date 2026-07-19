@@ -1,5 +1,20 @@
 #![no_std]
-use soroban_sdk::{contract, contracterror, contractimpl, contracttype, token, Address, Env};
+use soroban_sdk::{
+    contract, contractclient, contracterror, contractevent, contractimpl, contracttype, token,
+    Address, Env, Val,
+};
+
+/// The slice of the badge registry's interface this contract calls.
+///
+/// Declared here rather than depending on the badge crate: linking that crate
+/// in would pull its `#[contractimpl]` exports into this wasm, where its
+/// `initialize` would collide with ours. The return value is left as a raw
+/// `Val` because the awarded badge is of no use to the campaign — the frontend
+/// reads it from the registry directly.
+#[contractclient(name = "BadgeClient")]
+pub trait BadgeRegistry {
+    fn award(env: Env, campaign: Address, supporter: Address, amount: i128) -> Val;
+}
 
 /// Error types returned by the crowdfunding contract.
 /// (The Yellow Belt challenge asks for at least 3 handled error types.)
@@ -26,6 +41,37 @@ pub enum DataKey {
     Deadline,              // unix timestamp after which contributions stop
     TotalRaised,           // running total contributed so far
     Contribution(Address), // amount contributed by a given donor
+    Badge,                 // optional badge registry to notify on each contribution
+}
+
+// ---- events ---------------------------------------------------------------
+// Published so the frontend can update live instead of re-reading the ledger.
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Contributed {
+    #[topic]
+    pub donor: Address,
+    pub amount: i128,
+    /// Campaign total after this contribution.
+    pub total_raised: i128,
+    pub goal_reached: bool,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Withdrawn {
+    #[topic]
+    pub recipient: Address,
+    pub amount: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Refunded {
+    #[topic]
+    pub donor: Address,
+    pub amount: i128,
 }
 
 #[contract]
@@ -86,9 +132,49 @@ impl CrowdfundingContract {
             .unwrap_or(0);
         env.storage()
             .persistent()
-            .set(&DataKey::Contribution(donor), &(prev + amount));
+            .set(&DataKey::Contribution(donor.clone()), &(prev + amount));
+
+        let new_total = total + amount;
+
+        // Cross-contract call: credit the donor in the badge registry. The
+        // registry checks that this campaign is registered and that the call
+        // really came from it — our address authorizes the sub-invocation
+        // simply by being the caller.
+        if let Some(badge) = store.get::<DataKey, Address>(&DataKey::Badge) {
+            BadgeClient::new(&env, &badge).award(&env.current_contract_address(), &donor, &amount);
+        }
+
+        let goal: i128 = store.get(&DataKey::Goal).unwrap();
+        Contributed {
+            donor,
+            amount,
+            total_raised: new_total,
+            goal_reached: new_total >= goal,
+        }
+        .publish(&env);
 
         Ok(())
+    }
+
+    /// Point this campaign at a badge registry. Recipient only, and only once —
+    /// leaving it unset simply disables badges.
+    pub fn set_badge_registry(env: Env, badge: Address) -> Result<(), Error> {
+        let store = env.storage().instance();
+        let recipient: Address = store
+            .get(&DataKey::Recipient)
+            .ok_or(Error::NotInitialized)?;
+        recipient.require_auth();
+
+        if store.has(&DataKey::Badge) {
+            return Err(Error::AlreadyInitialized);
+        }
+        store.set(&DataKey::Badge, &badge);
+        Ok(())
+    }
+
+    /// The badge registry this campaign reports to, if any.
+    pub fn badge_registry(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::Badge)
     }
 
     /// The recipient withdraws all funds once the goal has been reached.
@@ -111,6 +197,11 @@ impl CrowdfundingContract {
         client.transfer(&env.current_contract_address(), &recipient, &total);
 
         store.set(&DataKey::TotalRaised, &0i128);
+        Withdrawn {
+            recipient,
+            amount: total,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -144,6 +235,7 @@ impl CrowdfundingContract {
 
         env.storage().persistent().set(&key, &0i128);
         store.set(&DataKey::TotalRaised, &(total - amount));
+        Refunded { donor, amount }.publish(&env);
         Ok(())
     }
 

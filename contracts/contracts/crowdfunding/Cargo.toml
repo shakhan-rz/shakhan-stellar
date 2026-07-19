@@ -11,5 +11,10 @@ doctest = false
 [dependencies]
 soroban-sdk = { workspace = true }
 
+# The badge registry is only a dev-dependency: the cross-contract call goes
+# through a #[contractclient] interface declared in lib.rs, so the badge
+# contract's code never links into this contract's wasm. Tests deploy the real
+# thing to check the two actually talk.
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+badge = { path = "../badge", features = ["testutils"] }
