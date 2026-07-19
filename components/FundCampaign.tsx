@@ -110,7 +110,9 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
       const who =
         e.donor === publicKey ? 'You' : stellar.formatAddress(e.donor, 4, 4);
       setLiveFlash(`${who} contributed ${stroopsToXlm(e.amount)} XLM`);
-      setTimeout(() => setLiveFlash(null), 6000);
+      // Long enough to notice and read after looking away; the numbers it
+      // announces stay changed regardless.
+      setTimeout(() => setLiveFlash(null), 15000);
       // Refresh quietly: the numbers change under the user, not the layout.
       loadRef.current(false);
     });

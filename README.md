@@ -175,6 +175,11 @@ The cargo registry and `target/` are cached against `Cargo.lock`, so runs after 
 **Fund — contributing through the smart contract**
 ![Fund](./screenshots/fund.png)
 
+**Live update** — a contribution made from the CLI, in another process
+entirely, arriving in the browser through the contract's `Contributed` event.
+The badge and leaderboard below it are read from a second contract.
+![Live update](./screenshots/live.png)
+
 **Successful testnet Send (with transaction hash)**
 ![Send success](./screenshots/send.png)
 
