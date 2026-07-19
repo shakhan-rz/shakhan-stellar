@@ -20,12 +20,12 @@ pub enum Error {
 #[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
-    Recipient,               // who receives the funds when the goal is met
-    Token,                   // the token (XLM SAC) used for contributions
-    Goal,                    // target amount (in stroops)
-    Deadline,                // unix timestamp after which contributions stop
-    TotalRaised,             // running total contributed so far
-    Contribution(Address),   // amount contributed by a given donor
+    Recipient,             // who receives the funds when the goal is met
+    Token,                 // the token (XLM SAC) used for contributions
+    Goal,                  // target amount (in stroops)
+    Deadline,              // unix timestamp after which contributions stop
+    TotalRaised,           // running total contributed so far
+    Contribution(Address), // amount contributed by a given donor
 }
 
 #[contract]
@@ -161,7 +161,10 @@ impl CrowdfundingContract {
     }
 
     pub fn deadline(env: Env) -> u64 {
-        env.storage().instance().get(&DataKey::Deadline).unwrap_or(0)
+        env.storage()
+            .instance()
+            .get(&DataKey::Deadline)
+            .unwrap_or(0)
     }
 
     pub fn recipient(env: Env) -> Option<Address> {
