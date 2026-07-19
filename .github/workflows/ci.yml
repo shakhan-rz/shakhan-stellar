@@ -53,7 +53,9 @@ jobs:
       - name: Install Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 22, not 20: vite 8 and jsdom 29 (pulled in by vitest) require
+          # >=20.19, and Node 20 went end-of-life in April 2026.
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
