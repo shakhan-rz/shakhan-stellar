@@ -135,6 +135,30 @@ rustup target add wasm32v1-none
 stellar contract build
 ```
 
+### Running the tests
+
+```bash
+cd contracts
+cargo test
+```
+
+---
+
+## 🔄 CI
+
+[![CI](https://github.com/shakhan-rz/shakhan-stellar/actions/workflows/ci.yml/badge.svg)](https://github.com/shakhan-rz/shakhan-stellar/actions/workflows/ci.yml)
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and pull request to `main`, as two parallel jobs:
+
+| Job | Steps |
+|---|---|
+| **Smart contract** | `cargo fmt --check` → `cargo test` (3 tests) → `cargo build --target wasm32v1-none --release` |
+| **Frontend** | `npm ci` → `tsc --noEmit` → `next build` |
+
+Both jobs install from the lockfile (`--locked`, `npm ci`) rather than re-resolving dependencies. That is deliberate: `soroban-env-host` declares `ed25519-dalek ">=2.0.0"`, so a plain build silently picked up the 3.0.0 release and broke `cargo test` on a transitive trait change. Installing from the lockfile turns that class of drift into a loud failure instead of a mystery.
+
+The cargo registry and `target/` are cached against `Cargo.lock`, so runs after the first skip rebuilding the soroban-sdk tree.
+
 ---
 
 ## 📸 Screenshots
@@ -156,6 +180,12 @@ stellar contract build
 
 **Split Bill — paid everyone at once**
 ![Split Bill](./screenshots/split.png)
+
+**CI pipeline — both jobs green on every push**
+![CI](./screenshots/ci.png)
+
+**Contract test output — 3 passing tests**
+![Tests](./screenshots/tests.png)
 
 ---
 
