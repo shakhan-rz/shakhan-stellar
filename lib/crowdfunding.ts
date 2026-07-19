@@ -19,6 +19,19 @@ import {
   allowAllModules,
   FREIGHTER_ID,
 } from '@creit.tech/stellar-wallets-kit';
+import { xlmToStroops, rankSupporters, Tier, type Badge, type Campaign } from './amounts';
+
+// Amount conversion and the badge types live in ./amounts, which has no wallet
+// or network dependency so it can be unit-tested on its own. Re-exported here
+// so callers still have a single import.
+export {
+  xlmToStroops,
+  stroopsToXlm,
+  rankSupporters,
+  nextTierGap,
+  Tier,
+} from './amounts';
+export type { Badge, Campaign } from './amounts';
 
 /** The campaign. Calls into BADGE_ID on every contribution. */
 export const CONTRACT_ID =
@@ -30,7 +43,6 @@ export const BADGE_ID =
 
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 const NETWORK_PASSPHRASE = StellarSdk.Networks.TESTNET;
-const STROOPS = 10_000_000n;
 
 const server = new StellarSdk.rpc.Server(RPC_URL);
 const contract = new StellarSdk.Contract(CONTRACT_ID);
@@ -49,43 +61,7 @@ function getKit(): StellarWalletsKit {
   return signingKit;
 }
 
-// ---- amount helpers -------------------------------------------------------
-
-export function xlmToStroops(value: string): bigint {
-  const [whole, frac = ''] = value.trim().split('.');
-  const fracPadded = (frac + '0000000').slice(0, 7);
-  return BigInt(whole || '0') * STROOPS + BigInt(fracPadded || '0');
-}
-
-export function stroopsToXlm(stroops: bigint): string {
-  const neg = stroops < 0n;
-  const abs = neg ? -stroops : stroops;
-  const whole = abs / STROOPS;
-  const frac = (abs % STROOPS).toString().padStart(7, '0').replace(/0+$/, '');
-  return `${neg ? '-' : ''}${whole}${frac ? '.' + frac : ''}`;
-}
-
 // ---- reads (via simulation) ----------------------------------------------
-
-export type Campaign = {
-  goalStroops: bigint;
-  raisedStroops: bigint;
-  deadline: number; // unix seconds
-};
-
-/** Badge tier, matching the `Tier` enum in the badge contract. */
-export enum Tier {
-  Bronze = 0,
-  Silver = 1,
-  Gold = 2,
-}
-
-export type Badge = {
-  supporter: string;
-  total: bigint;
-  tier: Tier;
-  count: number;
-};
 
 const addr = (a: string) => StellarSdk.Address.fromString(a).toScVal();
 
@@ -150,9 +126,7 @@ export async function getBadge(source: string): Promise<Badge | null> {
 /** Every supporter of this campaign, ranked by amount given (highest first). */
 export async function getSupporters(source: string): Promise<Badge[]> {
   const raw: any[] = await read(badgeContract, source, 'supporters', addr(CONTRACT_ID));
-  return raw
-    .map(toBadge)
-    .sort((a, b) => (b.total > a.total ? 1 : b.total < a.total ? -1 : 0));
+  return rankSupporters(raw.map(toBadge));
 }
 
 /** The (silver, gold) thresholds in stroops. */
