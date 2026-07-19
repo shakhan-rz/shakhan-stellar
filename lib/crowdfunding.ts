@@ -20,8 +20,13 @@ import {
   FREIGHTER_ID,
 } from '@creit.tech/stellar-wallets-kit';
 
+/** The campaign. Calls into BADGE_ID on every contribution. */
 export const CONTRACT_ID =
-  'CDIM27Z5AFBAP2OV6BI236K32DBXYAGZAIIICPRPRJM4QJV5FFKAGZ4R';
+  'CDARMHEBXGGGVQ53GASWRQHWDCVVB7O6SXZLZY47PTPINF6DDZWW4DNZ';
+
+/** The supporter badge registry the campaign reports to. */
+export const BADGE_ID =
+  'CBACUDL2SDBNBPDBDBFND6LQYZW25LKNFWWXZSWI277TA5WHXYFFU3WY';
 
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 const NETWORK_PASSPHRASE = StellarSdk.Networks.TESTNET;
@@ -29,6 +34,7 @@ const STROOPS = 10_000_000n;
 
 const server = new StellarSdk.rpc.Server(RPC_URL);
 const contract = new StellarSdk.Contract(CONTRACT_ID);
+const badgeContract = new StellarSdk.Contract(BADGE_ID);
 
 // A dedicated kit just for signing contract invocations.
 let signingKit: StellarWalletsKit | null = null;
@@ -67,13 +73,38 @@ export type Campaign = {
   deadline: number; // unix seconds
 };
 
-async function readValue(source: string, method: string): Promise<any> {
+/** Badge tier, matching the `Tier` enum in the badge contract. */
+export enum Tier {
+  Bronze = 0,
+  Silver = 1,
+  Gold = 2,
+}
+
+export type Badge = {
+  supporter: string;
+  total: bigint;
+  tier: Tier;
+  count: number;
+};
+
+const addr = (a: string) => StellarSdk.Address.fromString(a).toScVal();
+
+/**
+ * Call a read-only contract method through simulation. No signature, no fee,
+ * no transaction — the RPC server just runs it and hands back the result.
+ */
+async function read(
+  target: StellarSdk.Contract,
+  source: string,
+  method: string,
+  ...args: StellarSdk.xdr.ScVal[]
+): Promise<any> {
   const account = await server.getAccount(source);
   const tx = new StellarSdk.TransactionBuilder(account, {
     fee: StellarSdk.BASE_FEE,
     networkPassphrase: NETWORK_PASSPHRASE,
   })
-    .addOperation(contract.call(method))
+    .addOperation(target.call(method, ...args))
     .setTimeout(30)
     .build();
 
@@ -86,9 +117,9 @@ async function readValue(source: string, method: string): Promise<any> {
 
 export async function getCampaign(source: string): Promise<Campaign> {
   const [goal, raised, deadline] = await Promise.all([
-    readValue(source, 'goal'),
-    readValue(source, 'total_raised'),
-    readValue(source, 'deadline'),
+    read(contract, source, 'goal'),
+    read(contract, source, 'total_raised'),
+    read(contract, source, 'deadline'),
   ]);
   return {
     goalStroops: BigInt(goal),
@@ -98,21 +129,36 @@ export async function getCampaign(source: string): Promise<Campaign> {
 }
 
 export async function getContribution(source: string): Promise<bigint> {
-  const account = await server.getAccount(source);
-  const tx = new StellarSdk.TransactionBuilder(account, {
-    fee: StellarSdk.BASE_FEE,
-    networkPassphrase: NETWORK_PASSPHRASE,
-  })
-    .addOperation(
-      contract.call('contribution', StellarSdk.Address.fromString(source).toScVal())
-    )
-    .setTimeout(30)
-    .build();
-  const sim = await server.simulateTransaction(tx);
-  if (StellarSdk.rpc.Api.isSimulationError(sim)) {
-    throw new Error(sim.error);
-  }
-  return BigInt(StellarSdk.scValToNative(sim.result!.retval));
+  return BigInt(await read(contract, source, 'contribution', addr(source)));
+}
+
+function toBadge(raw: any): Badge {
+  return {
+    supporter: raw.supporter,
+    total: BigInt(raw.total),
+    tier: Number(raw.tier) as Tier,
+    count: Number(raw.count),
+  };
+}
+
+/** The badge `source` holds for this campaign, or null if they have none yet. */
+export async function getBadge(source: string): Promise<Badge | null> {
+  const raw = await read(badgeContract, source, 'badge_of', addr(CONTRACT_ID), addr(source));
+  return raw ? toBadge(raw) : null;
+}
+
+/** Every supporter of this campaign, ranked by amount given (highest first). */
+export async function getSupporters(source: string): Promise<Badge[]> {
+  const raw: any[] = await read(badgeContract, source, 'supporters', addr(CONTRACT_ID));
+  return raw
+    .map(toBadge)
+    .sort((a, b) => (b.total > a.total ? 1 : b.total < a.total ? -1 : 0));
+}
+
+/** The (silver, gold) thresholds in stroops. */
+export async function getThresholds(source: string): Promise<[bigint, bigint]> {
+  const [silver, gold] = await read(badgeContract, source, 'thresholds');
+  return [BigInt(silver), BigInt(gold)];
 }
 
 // ---- write (contribute) ---------------------------------------------------
@@ -174,4 +220,89 @@ export async function contribute(donor: string, amountXlm: string): Promise<stri
   }
 
   return hash;
+}
+
+// ---- live updates via contract events --------------------------------------
+
+/** A `Contributed` event as emitted by the campaign contract. */
+export type ContributedEvent = {
+  donor: string;
+  amount: bigint;
+  totalRaised: bigint;
+  goalReached: boolean;
+  ledger: number;
+  txHash: string;
+};
+
+/**
+ * Watch the campaign for new `Contributed` events and call `onEvent` for each.
+ *
+ * Soroban RPC has no push channel, so this polls `getEvents` from the latest
+ * ledger forward. That is still meaningfully different from re-reading the
+ * contract: we learn *what changed and who did it* — including contributions
+ * made by other people in other browsers — rather than just noticing a number
+ * moved.
+ *
+ * Returns an unsubscribe function.
+ */
+export function watchContributions(
+  onEvent: (e: ContributedEvent) => void,
+  onError?: (e: Error) => void,
+  intervalMs = 5000
+): () => void {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let cursorLedger: number | undefined;
+
+  const tick = async () => {
+    if (stopped) return;
+    try {
+      if (cursorLedger === undefined) {
+        const latest = await server.getLatestLedger();
+        cursorLedger = latest.sequence;
+      }
+
+      const res = await server.getEvents({
+        startLedger: cursorLedger,
+        filters: [
+          {
+            type: 'contract',
+            contractIds: [CONTRACT_ID],
+            // First topic is the event name the #[contractevent] macro derives
+            // from the struct: Contributed -> "contributed".
+            topics: [[StellarSdk.xdr.ScVal.scvSymbol('contributed').toXDR('base64'), '*']],
+          },
+        ],
+        limit: 100,
+      });
+
+      for (const ev of res.events) {
+        const data: any = StellarSdk.scValToNative(ev.value);
+        onEvent({
+          donor: StellarSdk.scValToNative(ev.topic[1]),
+          amount: BigInt(data.amount),
+          totalRaised: BigInt(data.total_raised),
+          goalReached: Boolean(data.goal_reached),
+          ledger: ev.ledger,
+          txHash: ev.txHash,
+        });
+      }
+
+      // Resume after the newest ledger we have seen.
+      cursorLedger = (res.latestLedger ?? cursorLedger) + 1;
+    } catch (err: any) {
+      // A poll failing is not fatal — the next one usually succeeds. Report it
+      // so the UI can show a degraded state rather than looking simply idle.
+      if (onError) onError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      if (!stopped) timer = setTimeout(tick, intervalMs);
+    }
+  };
+
+  tick();
+
+  return () => {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+  };
 }

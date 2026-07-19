@@ -3,8 +3,16 @@
  *
  * The "Fund" tab. Reads live campaign state from the Soroban crowdfunding
  * contract on testnet (goal / raised / deadline / your contribution) and lets
- * the connected wallet contribute XLM by calling the contract. Shows the
- * transaction status and a link to the on-chain result.
+ * the connected wallet contribute XLM by calling the contract.
+ *
+ * Contributing also earns a supporter badge: the campaign contract calls a
+ * second contract, the badge registry, which tracks each backer's running
+ * total and awards a Bronze / Silver / Gold tier. Both the badge and the
+ * supporter leaderboard are read from that second contract.
+ *
+ * The panel subscribes to the campaign's `Contributed` events, so a
+ * contribution made by anyone — in another browser, from the CLI — shows up
+ * here within a few seconds without a refresh.
  *
  * Contract logic lives in lib/crowdfunding.ts (separate from the locked
  * stellar-helper.ts).
@@ -12,17 +20,24 @@
 
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { stellar } from '@/lib/stellar-helper';
 import {
   CONTRACT_ID,
+  BADGE_ID,
   Campaign,
+  Badge,
+  Tier,
   getCampaign,
   getContribution,
+  getBadge,
+  getSupporters,
+  getThresholds,
+  watchContributions,
   contribute,
   stroopsToXlm,
 } from '@/lib/crowdfunding';
-import { FaHandHoldingHeart, FaExternalLinkAlt } from 'react-icons/fa';
+import { FaHandHoldingHeart, FaExternalLinkAlt, FaTrophy, FaBolt } from 'react-icons/fa';
 import { Card, Input, Button, Alert } from './example-components';
 
 interface FundCampaignProps {
@@ -36,34 +51,71 @@ type Status =
   | { kind: 'success'; hash: string }
   | { kind: 'error'; message: string };
 
+const TIERS: Record<Tier, { label: string; medal: string; ring: string }> = {
+  [Tier.Bronze]: { label: 'Bronze', medal: '🥉', ring: 'border-amber-700/50 bg-amber-700/10' },
+  [Tier.Silver]: { label: 'Silver', medal: '🥈', ring: 'border-slate-300/40 bg-slate-300/10' },
+  [Tier.Gold]: { label: 'Gold', medal: '🥇', ring: 'border-yellow-400/50 bg-yellow-400/10' },
+};
+
 export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps) {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [myContribution, setMyContribution] = useState<bigint>(0n);
+  const [badge, setBadge] = useState<Badge | null>(null);
+  const [supporters, setSupporters] = useState<Badge[]>([]);
+  const [thresholds, setThresholds] = useState<[bigint, bigint]>([0n, 0n]);
   const [loadingState, setLoadingState] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
+  const [liveFlash, setLiveFlash] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoadingState(true);
-    setLoadError(null);
-    try {
-      const [c, mine] = await Promise.all([
-        getCampaign(publicKey),
-        getContribution(publicKey),
-      ]);
-      setCampaign(c);
-      setMyContribution(mine);
-    } catch (err: any) {
-      setLoadError(err?.message || 'Could not load campaign state.');
-    } finally {
-      setLoadingState(false);
-    }
-  }, [publicKey]);
+  const load = useCallback(
+    async (showSpinner = true) => {
+      if (showSpinner) setLoadingState(true);
+      setLoadError(null);
+      try {
+        const [c, mine, mineBadge, all, thr] = await Promise.all([
+          getCampaign(publicKey),
+          getContribution(publicKey),
+          getBadge(publicKey),
+          getSupporters(publicKey),
+          getThresholds(publicKey),
+        ]);
+        setCampaign(c);
+        setMyContribution(mine);
+        setBadge(mineBadge);
+        setSupporters(all);
+        setThresholds(thr);
+      } catch (err: any) {
+        setLoadError(err?.message || 'Could not load campaign state.');
+      } finally {
+        if (showSpinner) setLoadingState(false);
+      }
+    },
+    [publicKey]
+  );
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // Keep the latest `load` reachable from the subscription without making the
+  // subscription itself depend on it — re-subscribing on every render would
+  // restart the event cursor and replay events.
+  const loadRef = useRef(load);
+  loadRef.current = load;
+
+  useEffect(() => {
+    const unsubscribe = watchContributions((e) => {
+      const who =
+        e.donor === publicKey ? 'You' : stellar.formatAddress(e.donor, 4, 4);
+      setLiveFlash(`${who} contributed ${stroopsToXlm(e.amount)} XLM`);
+      setTimeout(() => setLiveFlash(null), 6000);
+      // Refresh quietly: the numbers change under the user, not the layout.
+      loadRef.current(false);
+    });
+    return unsubscribe;
+  }, [publicKey]);
 
   const handleContribute = async () => {
     setStatus({ kind: 'sending' });
@@ -92,6 +144,16 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
   const isClosed = campaign ? Date.now() / 1000 > campaign.deadline : false;
   const goalReached = campaign ? raised >= goal && goal > 0n : false;
 
+  // How much further to the next badge tier, if there is one.
+  const [silverAt, goldAt] = thresholds;
+  const nextTier = (() => {
+    if (!badge || badge.tier === Tier.Gold) return null;
+    const target = badge.tier === Tier.Bronze ? silverAt : goldAt;
+    const label = badge.tier === Tier.Bronze ? 'Silver' : 'Gold';
+    if (target <= 0n || badge.total >= target) return null;
+    return { label, remaining: target - badge.total };
+  })();
+
   return (
     <Card>
       <h2 className="text-2xl font-bold text-white mb-2 flex items-center gap-2">
@@ -102,6 +164,14 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
         Back this crowdfunding campaign — your contribution is sent by calling a
         smart contract on Stellar testnet.
       </p>
+
+      {liveFlash && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-sky-400/30 bg-sky-400/10 px-4 py-2.5 text-sm text-sky-200">
+          <FaBolt className="shrink-0 text-sky-300" />
+          <span>{liveFlash}</span>
+          <span className="ml-auto text-xs text-sky-300/60">live</span>
+        </div>
+      )}
 
       {loadingState ? (
         <div className="flex items-center gap-3 text-white/60 py-8 justify-center">
@@ -155,6 +225,80 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
               </p>
             </div>
           </div>
+
+          {/* Supporter badge — awarded by a second contract */}
+          <div
+            className={`rounded-xl border p-4 ${
+              badge ? TIERS[badge.tier].ring : 'border-white/10 bg-white/5'
+            }`}
+          >
+            {badge ? (
+              <div className="flex items-center gap-4">
+                <div className="text-4xl leading-none">{TIERS[badge.tier].medal}</div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-white">
+                    {TIERS[badge.tier].label} supporter
+                  </p>
+                  <p className="text-sm text-white/60">
+                    {stroopsToXlm(badge.total)} XLM over {badge.count}{' '}
+                    {badge.count === 1 ? 'contribution' : 'contributions'}
+                  </p>
+                  {nextTier && (
+                    <p className="mt-1 text-xs text-white/40">
+                      {stroopsToXlm(nextTier.remaining)} XLM more for {nextTier.label}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-4">
+                <div className="text-4xl leading-none opacity-30">🥉</div>
+                <div>
+                  <p className="font-semibold text-white/80">No badge yet</p>
+                  <p className="text-sm text-white/50">
+                    Contribute to earn one — the campaign awards it through a
+                    second contract.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Leaderboard */}
+          {supporters.length > 0 && (
+            <div>
+              <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-white/80">
+                <FaTrophy className="text-yellow-400/70" />
+                Top supporters
+                <span className="text-white/40">({supporters.length})</span>
+              </h3>
+              <ol className="space-y-2">
+                {supporters.slice(0, 5).map((s, i) => {
+                  const isMe = s.supporter === publicKey;
+                  return (
+                    <li
+                      key={s.supporter}
+                      className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-sm ${
+                        isMe
+                          ? 'border-white/25 bg-white/10'
+                          : 'border-white/10 bg-white/5'
+                      }`}
+                    >
+                      <span className="w-4 text-white/40">{i + 1}</span>
+                      <span>{TIERS[s.tier].medal}</span>
+                      <span className="font-mono text-white/80">
+                        {stellar.formatAddress(s.supporter, 4, 4)}
+                        {isMe && <span className="ml-2 text-white/50">(you)</span>}
+                      </span>
+                      <span className="ml-auto font-semibold text-white">
+                        {stroopsToXlm(s.total)} XLM
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+          )}
 
           {/* Contribute form */}
           {!isClosed && !goalReached && (
@@ -210,14 +354,24 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
             />
           )}
 
-          <a
-            href={`https://stellar.expert/explorer/testnet/contract/${CONTRACT_ID}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block text-center text-white/40 hover:text-white/70 text-xs font-mono transition-colors"
-          >
-            Contract {stellar.formatAddress(CONTRACT_ID, 6, 6)}
-          </a>
+          <div className="flex flex-wrap justify-center gap-x-6 gap-y-1 border-t border-white/10 pt-4 text-xs font-mono text-white/40">
+            <a
+              href={`https://stellar.expert/explorer/testnet/contract/${CONTRACT_ID}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition-colors hover:text-white/70"
+            >
+              Campaign {stellar.formatAddress(CONTRACT_ID, 4, 4)}
+            </a>
+            <a
+              href={`https://stellar.expert/explorer/testnet/contract/${BADGE_ID}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition-colors hover:text-white/70"
+            >
+              Badges {stellar.formatAddress(BADGE_ID, 4, 4)}
+            </a>
+          </div>
         </div>
       ) : null}
     </Card>
