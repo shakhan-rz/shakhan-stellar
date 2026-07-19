@@ -16,6 +16,14 @@ pub trait BadgeRegistry {
     fn award(env: Env, campaign: Address, supporter: Address, amount: i128) -> Val;
 }
 
+// Soroban archives storage that is not touched. Ledgers close about every
+// 5 seconds, so these are roughly "renew for 90 days once under 30 days left".
+// Without this a long-running campaign's state would be archived mid-flight and
+// need an explicit restore before anyone could contribute again.
+const LEDGERS_PER_DAY: u32 = 17_280;
+const TTL_THRESHOLD: u32 = LEDGERS_PER_DAY * 30;
+const TTL_EXTEND_TO: u32 = LEDGERS_PER_DAY * 90;
+
 /// Error types returned by the crowdfunding contract.
 /// (The Yellow Belt challenge asks for at least 3 handled error types.)
 #[contracterror]
@@ -56,6 +64,17 @@ pub struct Contributed {
     /// Campaign total after this contribution.
     pub total_raised: i128,
     pub goal_reached: bool,
+}
+
+/// The badge registry rejected or could not handle an award. The contribution
+/// itself still went through.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BadgeAwardFailed {
+    #[topic]
+    pub registry: Address,
+    #[topic]
+    pub donor: Address,
 }
 
 #[contractevent]
@@ -120,7 +139,7 @@ impl CrowdfundingContract {
 
         let token: Address = store.get(&DataKey::Token).unwrap();
         let client = token::Client::new(&env, &token);
-        client.transfer(&donor, &env.current_contract_address(), &amount);
+        client.transfer(&donor, env.current_contract_address(), &amount);
 
         let total: i128 = store.get(&DataKey::TotalRaised).unwrap();
         store.set(&DataKey::TotalRaised, &(total + amount));
@@ -130,9 +149,16 @@ impl CrowdfundingContract {
             .persistent()
             .get(&DataKey::Contribution(donor.clone()))
             .unwrap_or(0);
+        let contribution_key = DataKey::Contribution(donor.clone());
         env.storage()
             .persistent()
-            .set(&DataKey::Contribution(donor.clone()), &(prev + amount));
+            .set(&contribution_key, &(prev + amount));
+
+        // Keep this campaign and this donor's record alive.
+        store.extend_ttl(TTL_THRESHOLD, TTL_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&contribution_key, TTL_THRESHOLD, TTL_EXTEND_TO);
 
         let new_total = total + amount;
 
@@ -140,8 +166,22 @@ impl CrowdfundingContract {
         // registry checks that this campaign is registered and that the call
         // really came from it — our address authorizes the sub-invocation
         // simply by being the caller.
+        //
+        // Deliberately `try_`: badges are a nice-to-have, and a registry that
+        // is misconfigured, archived, or upgraded out from under us must not
+        // stop people donating. The failure is reported as an event rather
+        // than swallowed, so it stays visible.
         if let Some(badge) = store.get::<DataKey, Address>(&DataKey::Badge) {
-            BadgeClient::new(&env, &badge).award(&env.current_contract_address(), &donor, &amount);
+            let awarded = BadgeClient::new(&env, &badge)
+                .try_award(&env.current_contract_address(), &donor, &amount)
+                .is_ok();
+            if !awarded {
+                BadgeAwardFailed {
+                    registry: badge,
+                    donor: donor.clone(),
+                }
+                .publish(&env);
+            }
         }
 
         let goal: i128 = store.get(&DataKey::Goal).unwrap();
@@ -156,8 +196,10 @@ impl CrowdfundingContract {
         Ok(())
     }
 
-    /// Point this campaign at a badge registry. Recipient only, and only once —
-    /// leaving it unset simply disables badges.
+    /// Point this campaign at a badge registry. Recipient only.
+    ///
+    /// Replacing an existing registry is allowed on purpose: pointing at a
+    /// wrong address must be a recoverable mistake, not a permanent one.
     pub fn set_badge_registry(env: Env, badge: Address) -> Result<(), Error> {
         let store = env.storage().instance();
         let recipient: Address = store
@@ -165,10 +207,19 @@ impl CrowdfundingContract {
             .ok_or(Error::NotInitialized)?;
         recipient.require_auth();
 
-        if store.has(&DataKey::Badge) {
-            return Err(Error::AlreadyInitialized);
-        }
         store.set(&DataKey::Badge, &badge);
+        Ok(())
+    }
+
+    /// Stop awarding badges. Recipient only.
+    pub fn clear_badge_registry(env: Env) -> Result<(), Error> {
+        let store = env.storage().instance();
+        let recipient: Address = store
+            .get(&DataKey::Recipient)
+            .ok_or(Error::NotInitialized)?;
+        recipient.require_auth();
+
+        store.remove(&DataKey::Badge);
         Ok(())
     }
 
@@ -207,6 +258,11 @@ impl CrowdfundingContract {
 
     /// If the deadline passed and the goal was NOT met, a donor can reclaim
     /// their contribution.
+    ///
+    /// The badge registry is intentionally left untouched: a badge records that
+    /// someone backed the campaign when it mattered, and refunding on a
+    /// campaign that failed does not undo that. The campaign's own
+    /// `contribution` tally is the number to trust for money.
     pub fn refund(env: Env, donor: Address) -> Result<(), Error> {
         donor.require_auth();
         let store = env.storage().instance();

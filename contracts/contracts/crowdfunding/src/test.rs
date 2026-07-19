@@ -180,7 +180,7 @@ fn campaign_works_without_a_badge_registry() {
 }
 
 #[test]
-fn badge_registry_is_set_once() {
+fn badge_registry_can_be_replaced_and_cleared() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -193,11 +193,17 @@ fn badge_registry_is_set_once() {
     let deadline = env.ledger().timestamp() + 1_000;
     client.initialize(&recipient, &token_addr, &500, &deadline);
 
-    attach_badges(&env, &id, &client, 500, 2_000);
+    let first = attach_badges(&env, &id, &client, 500, 2_000);
+    assert_eq!(client.badge_registry(), Some(first.address.clone()));
 
-    let other = env.register(badge::BadgeContract, ());
-    let res = client.try_set_badge_registry(&other);
-    assert_eq!(res, Err(Ok(Error::AlreadyInitialized)));
+    // Pointing somewhere else must be possible — otherwise a typo would be
+    // permanent.
+    let second = env.register(badge::BadgeContract, ());
+    client.set_badge_registry(&second);
+    assert_eq!(client.badge_registry(), Some(second));
+
+    client.clear_badge_registry();
+    assert_eq!(client.badge_registry(), None);
 }
 
 #[test]
@@ -234,4 +240,40 @@ fn contribute_publishes_an_event() {
     let published = ours.events().last().expect("no event published");
 
     assert_eq!(*published, expected.to_xdr(&env, &id));
+}
+
+/// A broken registry must never stop people donating. Before the `try_award`
+/// change this reverted the whole contribution, and because the registry was
+/// write-once the campaign could not be repaired.
+#[test]
+fn a_broken_registry_does_not_block_contributions() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let donor = Address::generate(&env);
+
+    let (token_addr, token_admin) = create_token(&env, &admin);
+    token_admin.mint(&donor, &1_000);
+
+    let id = env.register(CrowdfundingContract, ());
+    let client = CrowdfundingContractClient::new(&env, &id);
+    let deadline = env.ledger().timestamp() + 1_000;
+    client.initialize(&recipient, &token_addr, &500, &deadline);
+
+    // Point at an address that is not a badge registry at all.
+    let bogus = Address::generate(&env);
+    client.set_badge_registry(&bogus);
+
+    let res = client.try_contribute(&donor, &100);
+    assert!(res.is_ok(), "contributions are bricked by a bad registry");
+
+    // The money still moved, and the campaign can be repaired afterwards.
+    assert_eq!(client.total_raised(), 100);
+    assert_eq!(client.contribution(&donor), 100);
+
+    let working = attach_badges(&env, &id, &client, 500, 2_000);
+    client.contribute(&donor, &50);
+    assert_eq!(working.badge_of(&id, &donor).unwrap().total, 50);
 }

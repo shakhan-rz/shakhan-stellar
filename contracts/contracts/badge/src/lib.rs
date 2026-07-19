@@ -13,6 +13,12 @@ use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contracttype, Address, Env, Vec,
 };
 
+// See the matching note in the crowdfunding contract: untouched storage is
+// archived, so every write renews the entries it touched.
+const LEDGERS_PER_DAY: u32 = 17_280;
+const TTL_THRESHOLD: u32 = LEDGERS_PER_DAY * 30;
+const TTL_EXTEND_TO: u32 = LEDGERS_PER_DAY * 90;
+
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -170,8 +176,8 @@ impl BadgeContract {
         env.storage().persistent().set(&key, &badge);
 
         // First contribution from this supporter — add them to the roster.
+        let roster_key = DataKey::Roster(campaign.clone());
         if previous.is_none() {
-            let roster_key = DataKey::Roster(campaign.clone());
             let mut roster: Vec<Address> = env
                 .storage()
                 .persistent()
@@ -180,6 +186,17 @@ impl BadgeContract {
             roster.push_back(supporter.clone());
             env.storage().persistent().set(&roster_key, &roster);
         }
+
+        // Renew everything this call touched.
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&roster_key, TTL_THRESHOLD, TTL_EXTEND_TO);
 
         // Let the frontend update without polling the ledger.
         BadgeAwarded {
@@ -209,6 +226,11 @@ impl BadgeContract {
     /// Ranking is left to the caller: sorting on-chain would cost gas that
     /// grows with the supporter count, and the frontend can order the list for
     /// free.
+    ///
+    /// Known limit: this reads the whole roster in one call, so a campaign with
+    /// a very large number of supporters would eventually exceed the read
+    /// limits. `badge_of` stays O(1) and is what the per-user UI uses; paging
+    /// this one is the fix if a campaign ever gets that big.
     pub fn supporters(env: Env, campaign: Address) -> Vec<Badge> {
         let roster: Vec<Address> = env
             .storage()
