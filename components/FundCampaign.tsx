@@ -68,11 +68,15 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
   const [amount, setAmount] = useState('');
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const [liveFlash, setLiveFlash] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+
+  // Whether a load has ever succeeded. A refresh that fails behind an
+  // already-rendered campaign must not blank it out.
+  const hasLoaded = useRef(false);
 
   const load = useCallback(
     async (showSpinner = true) => {
       if (showSpinner) setLoadingState(true);
-      setLoadError(null);
       try {
         const [c, mine, mineBadge, all, thr] = await Promise.all([
           getCampaign(publicKey),
@@ -86,8 +90,17 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
         setBadge(mineBadge);
         setSupporters(all);
         setThresholds(thr);
+        hasLoaded.current = true;
+        setLoadError(null);
+        setRefreshError(null);
       } catch (err: any) {
-        setLoadError(err?.message || 'Could not load campaign state.');
+        const message = err?.message || 'Could not load campaign state.';
+        if (hasLoaded.current) {
+          // Keep showing the last good numbers, flag them as possibly stale.
+          setRefreshError(message);
+        } else {
+          setLoadError(message);
+        }
       } finally {
         if (showSpinner) setLoadingState(false);
       }
@@ -106,16 +119,21 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
   loadRef.current = load;
 
   useEffect(() => {
-    const unsubscribe = watchContributions((e) => {
-      const who =
-        e.donor === publicKey ? 'You' : stellar.formatAddress(e.donor, 4, 4);
-      setLiveFlash(`${who} contributed ${stroopsToXlm(e.amount)} XLM`);
-      // Long enough to notice and read after looking away; the numbers it
-      // announces stay changed regardless.
-      setTimeout(() => setLiveFlash(null), 15000);
-      // Refresh quietly: the numbers change under the user, not the layout.
-      loadRef.current(false);
-    });
+    const unsubscribe = watchContributions(
+      (e) => {
+        const who =
+          e.donor === publicKey ? 'You' : stellar.formatAddress(e.donor, 4, 4);
+        setLiveFlash(`${who} contributed ${stroopsToXlm(e.amount)} XLM`);
+        // Long enough to notice and read after looking away; the numbers it
+        // announces stay changed regardless.
+        setTimeout(() => setLiveFlash(null), 15000);
+        // Refresh quietly: the numbers change under the user, not the layout.
+        loadRef.current(false);
+      },
+      // Without this the watcher could fail silently and the panel would look
+      // simply idle rather than disconnected.
+      (err) => setRefreshError(err.message)
+    );
     return unsubscribe;
   }, [publicKey]);
 
@@ -172,6 +190,13 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
           <FaBolt className="shrink-0 text-sky-300" />
           <span>{liveFlash}</span>
           <span className="ml-auto text-xs text-sky-300/60">live</span>
+        </div>
+      )}
+
+      {refreshError && campaign && (
+        <div className="mb-4 rounded-xl border border-amber-400/25 bg-amber-400/5 px-4 py-2.5 text-sm text-amber-200/80">
+          Showing the last known figures — couldn&apos;t reach the network to
+          refresh.
         </div>
       )}
 

@@ -227,6 +227,7 @@ export function watchContributions(
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let cursorLedger: number | undefined;
+  let consecutiveFailures = 0;
 
   const tick = async () => {
     if (stopped) return;
@@ -264,9 +265,22 @@ export function watchContributions(
 
       // Resume after the newest ledger we have seen.
       cursorLedger = (res.latestLedger ?? cursorLedger) + 1;
+      consecutiveFailures = 0;
     } catch (err: any) {
       // A poll failing is not fatal — the next one usually succeeds. Report it
       // so the UI can show a degraded state rather than looking simply idle.
+      consecutiveFailures += 1;
+
+      // Soroban RPC only retains a day or so of events. After a laptop sleeps
+      // or the connection drops for long enough, the cursor falls outside that
+      // window and every later poll fails on the same ledger — the watcher
+      // would be stuck for good. Give up on the gap and rejoin at the head.
+      // Retry the same range a few times first, so a brief blip does not cost
+      // us events.
+      if (consecutiveFailures >= 3) {
+        cursorLedger = undefined;
+      }
+
       if (onError) onError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       if (!stopped) timer = setTimeout(tick, intervalMs);

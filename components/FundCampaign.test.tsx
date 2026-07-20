@@ -135,3 +135,33 @@ describe('FundCampaign', () => {
     expect(unsubscribe).toHaveBeenCalled();
   });
 });
+
+describe('background refresh', () => {
+  it('keeps the panel visible when a live refresh fails', async () => {
+    let onEvent: ((e: any) => void) | undefined;
+    mocks.watchContributions.mockImplementation((cb: any) => {
+      onEvent = cb;
+      return () => {};
+    });
+
+    render(<FundCampaign publicKey={ME} />);
+    await waitFor(() => expect(screen.getByText(/goal 100 XLM/i)).toBeInTheDocument());
+
+    // A contribution lands, but the refresh it triggers hits a network blip.
+    mocks.getCampaign.mockRejectedValue(new Error('RPC unreachable'));
+    onEvent!({
+      donor: OTHER,
+      amount: 30_000_000n,
+      totalRaised: 380_000_000n,
+      goalReached: false,
+      ledger: 1,
+      txHash: 'abc',
+    });
+
+    // The already-loaded campaign must survive a transient failure.
+    await waitFor(() =>
+      expect(screen.getByText(/contributed 3 XLM/i)).toBeInTheDocument()
+    );
+    expect(screen.getByText(/goal 100 XLM/i)).toBeInTheDocument();
+  });
+});
