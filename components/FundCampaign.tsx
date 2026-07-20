@@ -111,7 +111,10 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
           setLoadError(message);
         }
       } finally {
-        if (showSpinner && seq === loadSeq.current) setLoadingState(false);
+        // Clear the spinner even if this load was superseded. A quiet
+        // background refresh never sets it, so it would otherwise be left on
+        // by whichever spinner-showing load happened to be overtaken.
+        if (showSpinner) setLoadingState(false);
       }
     },
     [publicKey]

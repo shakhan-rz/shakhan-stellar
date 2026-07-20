@@ -177,3 +177,45 @@ describe('background refresh', () => {
     expect(screen.getByText(/goal 100 XLM/i)).toBeInTheDocument();
   });
 });
+
+describe('overlapping loads', () => {
+  it('does not leave the spinner stuck when an event lands mid-load', async () => {
+    // Hold the first (spinner-showing) load open.
+    let releaseFirst: (v: any) => void;
+    mocks.getCampaign.mockReturnValueOnce(
+      new Promise((res) => {
+        releaseFirst = res;
+      })
+    );
+
+    let onEvent: ((e: any) => void) | undefined;
+    mocks.watchContributions.mockImplementation((cb: any) => {
+      onEvent = cb;
+      return () => {};
+    });
+
+    render(<FundCampaign publicKey={ME} />);
+    expect(screen.getByText(/loading campaign/i)).toBeInTheDocument();
+
+    // A contribution arrives while the first load is still in flight and
+    // kicks off a second, quiet load.
+    onEvent!({
+      donor: OTHER,
+      amount: 30_000_000n,
+      totalRaised: 380_000_000n,
+      goalReached: false,
+      ledger: 1,
+      txHash: 'abc',
+    });
+
+    // Now the original load comes back.
+    releaseFirst!(campaign);
+
+    // The spinner has to go away — the quiet load can't clear it, and the
+    // first one has been superseded.
+    await waitFor(() =>
+      expect(screen.queryByText(/loading campaign/i)).not.toBeInTheDocument()
+    );
+    expect(screen.getByText(/goal 100 XLM/i)).toBeInTheDocument();
+  });
+});
