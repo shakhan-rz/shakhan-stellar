@@ -11,6 +11,7 @@
 
 import { useState } from 'react';
 import { stellar } from '@/lib/stellar-helper';
+import { connectWallet } from '@/lib/wallet';
 import BalanceDisplay from '@/components/BalanceDisplay';
 import PaymentForm from '@/components/PaymentForm';
 import TransactionHistory from '@/components/TransactionHistory';
@@ -33,7 +34,12 @@ export default function Home() {
   const connect = async () => {
     try {
       setLoading(true);
-      const key = await stellar.connectWallet();
+      // lib/wallet rather than stellar.connectWallet(): the helper reads the
+      // address before the picker has been answered, so it only ever worked
+      // where the default wallet was already installed. See lib/wallet.ts.
+      // Selection is shared across kit instances, so payments and contract
+      // calls both sign with whatever is chosen here.
+      const key = await connectWallet();
       setPublicKey(key);
       setIsConnected(true);
     } catch (err: any) {

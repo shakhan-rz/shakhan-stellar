@@ -6,19 +6,15 @@
  * contract-invoke transaction, has the user's wallet sign it, submits it,
  * and waits for the on-chain result.
  *
- * This lives OUTSIDE stellar-helper.ts (which must not be modified) and uses
- * its own Wallets Kit instance for signing contract calls.
+ * This lives OUTSIDE stellar-helper.ts (which must not be modified). Signing
+ * goes through the shared kit in ./wallet, so contract calls are signed by
+ * whichever wallet the user connected with.
  */
 
 'use client';
 
 import * as StellarSdk from '@stellar/stellar-sdk';
-import {
-  StellarWalletsKit,
-  WalletNetwork,
-  allowAllModules,
-  FREIGHTER_ID,
-} from '@creit.tech/stellar-wallets-kit';
+import { getKit } from './wallet';
 import { xlmToStroops, rankSupporters, Tier, type Badge, type Campaign } from './amounts';
 
 // Amount conversion and the badge types live in ./amounts, which has no wallet
@@ -47,19 +43,6 @@ const NETWORK_PASSPHRASE = StellarSdk.Networks.TESTNET;
 const server = new StellarSdk.rpc.Server(RPC_URL);
 const contract = new StellarSdk.Contract(CONTRACT_ID);
 const badgeContract = new StellarSdk.Contract(BADGE_ID);
-
-// A dedicated kit just for signing contract invocations.
-let signingKit: StellarWalletsKit | null = null;
-function getKit(): StellarWalletsKit {
-  if (!signingKit) {
-    signingKit = new StellarWalletsKit({
-      network: WalletNetwork.TESTNET,
-      selectedWalletId: FREIGHTER_ID,
-      modules: allowAllModules(),
-    });
-  }
-  return signingKit;
-}
 
 // ---- reads (via simulation) ----------------------------------------------
 
