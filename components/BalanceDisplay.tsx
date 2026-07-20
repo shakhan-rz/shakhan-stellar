@@ -87,11 +87,14 @@ export default function BalanceDisplay({ publicKey }: BalanceDisplayProps) {
       {/* XLM Balance */}
       <div className="bg-gradient-to-br from-neutral-700/60 to-neutral-800/60 border border-white/10 rounded-xl p-6 mb-4">
         <p className="text-white/60 text-sm mb-2">Available Balance</p>
-        <div className="flex items-baseline gap-2">
-          <p className="text-5xl font-bold text-white">
+        {/* A funded testnet balance runs to seven decimals, which overflows a
+            phone at text-5xl. Scale the figure with the viewport and let it
+            wrap rather than clipping the digits. */}
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          <p className="text-3xl sm:text-4xl md:text-5xl font-bold text-white break-all">
             {formatBalance(balance)}
           </p>
-          <p className="text-2xl text-white/80">XLM</p>
+          <p className="text-xl sm:text-2xl text-white/80">XLM</p>
         </div>
         
         {/* USD Estimate (placeholder for bonus feature) */}

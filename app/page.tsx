@@ -68,8 +68,8 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-br from-neutral-800 via-neutral-900 to-neutral-800 flex flex-col">
       {/* ── Header ─────────────────────────────────────────────── */}
       <header className="border-b border-white/10 bg-black/20 backdrop-blur-sm sticky top-0 z-40">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="max-w-6xl mx-auto px-3 sm:px-4 py-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <div className="w-10 h-10 bg-gradient-to-br from-neutral-100 to-neutral-400 rounded-xl flex items-center justify-center text-xl font-black text-neutral-900">
               S
             </div>
@@ -172,19 +172,26 @@ export default function Home() {
           <div className="flex flex-col lg:flex-row gap-8">
             {/* Sidebar nav */}
             <aside className="lg:w-52 flex-shrink-0">
-              <nav className="flex lg:flex-col gap-2 lg:sticky lg:top-24">
+              {/* Four tabs squeezed into one phone-width row leaves labels
+                  clipped and tap targets tight, so they go two-up below sm.
+                  A grid rather than a wrapping flex row: Tailwind emits
+                  arbitrary values like basis-[calc(50%-0.25rem)] after the
+                  responsive blocks, so the phone basis outranked sm: and the
+                  layout would not change back. Column counts say the same
+                  thing without the ordering trap. */}
+              <nav className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-1 gap-2 lg:sticky lg:top-24">
                 {nav.map((n) => (
                   <button
                     key={n.id}
                     onClick={() => setTab(n.id)}
-                    className={`flex-1 lg:flex-none flex items-center justify-center lg:justify-start gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
+                    className={`min-w-0 flex items-center justify-center lg:justify-start gap-2 sm:gap-3 px-2 sm:px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
                       tab === n.id
                         ? 'bg-white/10 text-white border border-white/15'
                         : 'text-white/50 hover:text-white hover:bg-white/5 border border-transparent'
                     }`}
                   >
-                    {n.icon}
-                    <span>{n.label}</span>
+                    <span className="shrink-0">{n.icon}</span>
+                    <span className="truncate">{n.label}</span>
                   </button>
                 ))}
               </nav>
