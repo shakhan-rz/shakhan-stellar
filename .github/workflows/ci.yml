@@ -69,9 +69,10 @@ jobs:
           echo "$out"
           if [ $code -ne 0 ]; then
             # Repo logs need a sign-in to read; annotations do not. Echoing
-            # the failure into one is what made the lockfile drift below
-            # diagnosable at all, so it stays.
+            # the failure into one is what made lockfile drift diagnosable at
+            # all, so it stays.
             echo "::error::npm ci failed:%0A$(echo "$out" | tail -40 | sed 's/%/%25/g; s/\r/ /g' | awk '{printf "%s%%0A", $0}')"
+            echo "::error::If this says 'Missing: <pkg> from lock file', the lockfile was written by an incremental install on another platform. Fix with: rm -rf node_modules package-lock.json && npm install"
           fi
           exit $code
 

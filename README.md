@@ -138,9 +138,25 @@ stellar contract build
 ### Running the tests
 
 ```bash
-cd contracts
-cargo test
+npm test          # frontend — 33 tests
+cd contracts && cargo test   # contracts — 16 tests
 ```
+
+### Adding an npm dependency
+
+Regenerate the lockfile from scratch rather than letting `npm install`
+patch it:
+
+```bash
+rm -rf node_modules package-lock.json && npm install
+```
+
+An incremental install records only the dependency placements the current
+platform needs. Optional and platform-specific packages (`utf-8-validate`,
+`@noble/hashes`) then end up missing entries that `npm ci` on Linux requires,
+and CI fails with `Missing: <pkg> from lock file` even though everything
+installs cleanly on the machine that wrote it. `npm ci --dry-run` does not
+catch this — only a real install on the target platform does.
 
 ---
 
