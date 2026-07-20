@@ -25,6 +25,7 @@ export {
   stroopsToXlm,
   rankSupporters,
   nextTierGap,
+  isAccountNotFound,
   Tier,
 } from './amounts';
 export type { Badge, Campaign } from './amounts';
@@ -47,6 +48,7 @@ const badgeContract = new StellarSdk.Contract(BADGE_ID);
 // ---- reads (via simulation) ----------------------------------------------
 
 const addr = (a: string) => StellarSdk.Address.fromString(a).toScVal();
+
 
 /**
  * Call a read-only contract method through simulation. No signature, no fee,

@@ -13,6 +13,7 @@ import {
   stroopsToXlm,
   rankSupporters,
   nextTierGap,
+  isAccountNotFound,
   Tier,
   type Badge,
 } from './amounts';
@@ -164,5 +165,21 @@ describe('nextTierGap', () => {
     // Thresholds default to 0n on first render; showing "0 XLM more" then
     // would be wrong.
     expect(nextTierGap(badge(10_000_000n, Tier.Bronze), 0n, 0n)).toBeNull();
+  });
+});
+
+describe('isAccountNotFound', () => {
+  it('recognises the unfunded-account error', () => {
+    expect(
+      isAccountNotFound(new Error('Account not found: GD5FXBZXOFNPJGAC3JYD2B7'))
+    ).toBe(true);
+    expect(isAccountNotFound(new Error('NotFound'))).toBe(true);
+  });
+
+  it('does not swallow unrelated failures', () => {
+    // These need to surface as real errors, not a "go fund your wallet" nudge.
+    expect(isAccountNotFound(new Error('RPC unreachable'))).toBe(false);
+    expect(isAccountNotFound(new Error('Timed out'))).toBe(false);
+    expect(isAccountNotFound(undefined)).toBe(false);
   });
 });

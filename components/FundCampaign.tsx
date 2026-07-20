@@ -33,6 +33,7 @@ import {
   getBadge,
   getSupporters,
   getThresholds,
+  isAccountNotFound,
   watchContributions,
   contribute,
   stroopsToXlm,
@@ -69,6 +70,7 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const [liveFlash, setLiveFlash] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [needsFunding, setNeedsFunding] = useState(false);
 
   // Whether a load has ever succeeded. A refresh that fails behind an
   // already-rendered campaign must not blank it out.
@@ -101,8 +103,15 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
         hasLoaded.current = true;
         setLoadError(null);
         setRefreshError(null);
+        setNeedsFunding(false);
       } catch (err: any) {
         if (seq !== loadSeq.current) return;
+        if (isAccountNotFound(err)) {
+          // Not a failure to explain away — the wallet just has not been
+          // funded yet, and there is a specific thing the user can do.
+          setNeedsFunding(true);
+          return;
+        }
         const message = err?.message || 'Could not load campaign state.';
         if (hasLoaded.current) {
           // Keep showing the last good numbers, flag them as possibly stale.
@@ -225,6 +234,30 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
         <div className="flex items-center gap-3 text-white/60 py-8 justify-center">
           <div className="h-5 w-5 animate-spin rounded-full border-4 border-solid border-white/70 border-r-transparent" />
           Loading campaign…
+        </div>
+      ) : needsFunding ? (
+        <div className="rounded-xl border border-amber-400/25 bg-amber-400/5 p-5">
+          <p className="mb-1 font-semibold text-amber-200">
+            This wallet needs testnet XLM first
+          </p>
+          <p className="mb-4 text-sm text-white/60">
+            A new Stellar account does not exist on the ledger until something
+            funds it. Friendbot hands out free testnet XLM — claim some, then
+            come back.
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <a
+              href={`https://friendbot.stellar.org/?addr=${publicKey}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-400/90 px-4 py-2.5 text-sm font-semibold text-neutral-900 transition-colors hover:bg-amber-300"
+            >
+              Fund with Friendbot <FaExternalLinkAlt className="text-xs" />
+            </a>
+            <Button onClick={() => load()} variant="secondary">
+              I&apos;ve funded it — reload
+            </Button>
+          </div>
         </div>
       ) : loadError ? (
         <div className="space-y-3">

@@ -121,12 +121,14 @@ export function Alert({
 
   return (
     <div
-      className={`${colors[type]} text-white px-6 py-4 rounded-lg shadow-lg flex justify-between items-center`}
+      className={`${colors[type]} text-white px-4 sm:px-6 py-4 rounded-lg shadow-lg flex justify-between items-start gap-3`}
     >
-      <span>{message}</span>
+      {/* Messages can carry a 56-character Stellar address, which runs off the
+          side of a phone unless it is allowed to break mid-string. */}
+      <span className="min-w-0 break-words">{message}</span>
       <button
         onClick={onClose}
-        className="ml-4 text-white/80 hover:text-white"
+        className="shrink-0 text-white/80 hover:text-white"
       >
         ✕
       </button>

@@ -77,3 +77,16 @@ export function nextTierGap(
   if (target <= 0n || badge.total >= target) return null;
   return { label, remaining: target - badge.total };
 }
+
+/**
+ * Whether an error means the Stellar account simply does not exist yet.
+ *
+ * A brand new wallet has no ledger entry until something funds it, and every
+ * contract read starts by loading the source account. This is an expected
+ * state rather than a fault, so the UI can point at Friendbot instead of
+ * showing a raw error with a 56-character address in it.
+ */
+export function isAccountNotFound(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err ?? '');
+  return /account not found|NotFound/i.test(message);
+}

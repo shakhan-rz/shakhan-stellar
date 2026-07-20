@@ -219,3 +219,35 @@ describe('overlapping loads', () => {
     expect(screen.getByText(/goal 100 XLM/i)).toBeInTheDocument();
   });
 });
+
+describe('unfunded wallet', () => {
+  it('explains how to get testnet XLM instead of showing a raw error', async () => {
+    mocks.getCampaign.mockRejectedValue(
+      new Error('Account not found: GD5FXBZXOFNPJGAC3JYD2B7Q4LOBAVPNR4EVXYZ')
+    );
+
+    render(<FundCampaign publicKey={ME} />);
+    await waitFor(() =>
+      expect(screen.getByText(/needs testnet XLM first/i)).toBeInTheDocument()
+    );
+
+    // The raw address-bearing error is not what the user should be reading.
+    expect(screen.queryByText(/Account not found/)).not.toBeInTheDocument();
+
+    // And there is a one-tap way out, pointed at this wallet.
+    const link = screen.getByRole('link', { name: /fund with friendbot/i });
+    expect(link).toHaveAttribute('href', `https://friendbot.stellar.org/?addr=${ME}`);
+  });
+
+  it('recovers once the account is funded', async () => {
+    mocks.getCampaign.mockRejectedValueOnce(new Error('Account not found: G...'));
+    render(<FundCampaign publicKey={ME} />);
+    await waitFor(() =>
+      expect(screen.getByText(/needs testnet XLM first/i)).toBeInTheDocument()
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /funded it/i }));
+    await waitFor(() => expect(screen.getByText(/goal 100 XLM/i)).toBeInTheDocument());
+    expect(screen.queryByText(/needs testnet XLM/i)).not.toBeInTheDocument();
+  });
+});
