@@ -74,8 +74,15 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
   // already-rendered campaign must not blank it out.
   const hasLoaded = useRef(false);
 
+  // A background refresh and a user-triggered one can be in flight at once,
+  // and nothing guarantees their responses arrive in the order they were
+  // sent. Only the newest request may write state, or a slow stale response
+  // would overwrite fresher numbers.
+  const loadSeq = useRef(0);
+
   const load = useCallback(
     async (showSpinner = true) => {
+      const seq = ++loadSeq.current;
       if (showSpinner) setLoadingState(true);
       try {
         const [c, mine, mineBadge, all, thr] = await Promise.all([
@@ -85,6 +92,7 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
           getSupporters(publicKey),
           getThresholds(publicKey),
         ]);
+        if (seq !== loadSeq.current) return; // a newer load superseded this one
         setCampaign(c);
         setMyContribution(mine);
         setBadge(mineBadge);
@@ -94,6 +102,7 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
         setLoadError(null);
         setRefreshError(null);
       } catch (err: any) {
+        if (seq !== loadSeq.current) return;
         const message = err?.message || 'Could not load campaign state.';
         if (hasLoaded.current) {
           // Keep showing the last good numbers, flag them as possibly stale.
@@ -102,7 +111,7 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
           setLoadError(message);
         }
       } finally {
-        if (showSpinner) setLoadingState(false);
+        if (showSpinner && seq === loadSeq.current) setLoadingState(false);
       }
     },
     [publicKey]
@@ -118,6 +127,11 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
   const loadRef = useRef(load);
   loadRef.current = load;
 
+  // One timer for the flash. A second event must restart the countdown, not
+  // leave the first event's timer to hide the newer message early — and an
+  // unmount must not leave a timer firing into a gone component.
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
   useEffect(() => {
     const unsubscribe = watchContributions(
       (e) => {
@@ -126,7 +140,8 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
         setLiveFlash(`${who} contributed ${stroopsToXlm(e.amount)} XLM`);
         // Long enough to notice and read after looking away; the numbers it
         // announces stay changed regardless.
-        setTimeout(() => setLiveFlash(null), 15000);
+        if (flashTimer.current) clearTimeout(flashTimer.current);
+        flashTimer.current = setTimeout(() => setLiveFlash(null), 15000);
         // Refresh quietly: the numbers change under the user, not the layout.
         loadRef.current(false);
       },
@@ -134,7 +149,10 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
       // simply idle rather than disconnected.
       (err) => setRefreshError(err.message)
     );
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+    };
   }, [publicKey]);
 
   const handleContribute = async () => {
@@ -206,7 +224,14 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
           Loading campaign…
         </div>
       ) : loadError ? (
-        <Alert type="error" message={loadError} onClose={() => setLoadError(null)} />
+        <div className="space-y-3">
+          <Alert type="error" message={loadError} onClose={() => setLoadError(null)} />
+          {/* Dismissing the error would otherwise leave an empty panel —
+              nothing has loaded yet, so the only useful action is retrying. */}
+          <Button onClick={() => load()} variant="secondary" fullWidth>
+            Try again
+          </Button>
+        </div>
       ) : campaign ? (
         <div className="space-y-6">
           {/* Progress */}
@@ -400,7 +425,13 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
             </a>
           </div>
         </div>
-      ) : null}
+      ) : (
+        // Nothing loaded and the error was dismissed — offer the way back
+        // rather than an empty panel.
+        <Button onClick={() => load()} variant="secondary" fullWidth>
+          Try again
+        </Button>
+      )}
     </Card>
   );
 }

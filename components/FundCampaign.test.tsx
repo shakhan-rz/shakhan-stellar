@@ -8,6 +8,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { Tier, type Badge, type Campaign } from '@/lib/amounts';
 
 const ME = 'GB237RO6DJ2OS5CXAQI63QZ3IVM4FETD7RYOETALEWXVIYD6SXZ7H775';
@@ -121,6 +122,17 @@ describe('FundCampaign', () => {
     render(<FundCampaign publicKey={ME} />);
     await waitFor(() => expect(screen.getByText(/RPC unreachable/)).toBeInTheDocument());
     expect(screen.queryByText(/goal 100 XLM/i)).not.toBeInTheDocument();
+  });
+
+  it('recovers from a failed first load via Try again', async () => {
+    mocks.getCampaign.mockRejectedValueOnce(new Error('RPC unreachable'));
+    render(<FundCampaign publicKey={ME} />);
+    await waitFor(() => expect(screen.getByText(/RPC unreachable/)).toBeInTheDocument());
+
+    // The failure state must offer a way back, and it must work.
+    await userEvent.click(screen.getByRole('button', { name: /try again/i }));
+    await waitFor(() => expect(screen.getByText(/goal 100 XLM/i)).toBeInTheDocument());
+    expect(screen.queryByText(/RPC unreachable/)).not.toBeInTheDocument();
   });
 
   it('subscribes to contract events and unsubscribes on unmount', async () => {
