@@ -130,6 +130,11 @@ export default function TransactionHistory({ publicKey }: TransactionHistoryProp
           {transactions.map((tx) => {
             const outgoing = isOutgoing(tx);
             const isContractCall = tx.type === 'invoke_host_function';
+            // A create_account operation (e.g. Friendbot funding a new wallet)
+            // has no from/to/amount in the payments feed — those live under
+            // different field names the locked helper does not read. Rather
+            // than render "N/A / N/A", label it for what it is.
+            const isAccountFunding = tx.type === 'create_account';
 
             return (
               <div
@@ -145,11 +150,17 @@ export default function TransactionHistory({ publicKey }: TransactionHistoryProp
                         ? 'bg-red-500/20 text-red-400'
                         : 'bg-green-500/20 text-green-400'
                     }`}>
-                      {isContractCall ? <FaFileContract /> : outgoing ? <FaArrowUp /> : <FaArrowDown />}
+                      {isContractCall || isAccountFunding ? <FaFileContract /> : outgoing ? <FaArrowUp /> : <FaArrowDown />}
                     </div>
                     <div>
                       <p className="text-white font-semibold">
-                        {isContractCall ? 'Contract Call' : outgoing ? 'Sent' : 'Received'}
+                        {isContractCall
+                          ? 'Contract Call'
+                          : isAccountFunding
+                          ? 'Account Funded'
+                          : outgoing
+                          ? 'Sent'
+                          : 'Received'}
                       </p>
                       {tx.amount && (
                         <p className={`text-lg font-bold ${
@@ -174,6 +185,10 @@ export default function TransactionHistory({ publicKey }: TransactionHistoryProp
                 {isContractCall ? (
                   <p className="text-white/60 text-sm">
                     Soroban smart contract invocation
+                  </p>
+                ) : isAccountFunding ? (
+                  <p className="text-white/60 text-sm">
+                    Account created and funded with testnet XLM
                   </p>
                 ) : (
                   <div className="grid grid-cols-2 gap-3 text-sm">
