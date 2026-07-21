@@ -298,8 +298,11 @@ The badge and leaderboard below it are read from a second contract.
 **CI pipeline — both jobs green on every push**
 ![CI](./screenshots/ci.png)
 
-**Test output — passing contract and frontend tests**
-![Tests](./screenshots/tests.png)
+**Frontend test output — 50 passing Vitest tests**
+![Frontend tests](./screenshots/tests.png)
+
+**Contract test output — 16 passing tests (8 badge + 8 crowdfunding)**
+![Contract tests](./screenshots/tests-contracts.png)
 
 ---
 
