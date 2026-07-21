@@ -87,6 +87,12 @@ export function nextTierGap(
  * showing a raw error with a 56-character address in it.
  */
 export function isAccountNotFound(err: unknown): boolean {
+  // Horizon (used by getBalance) throws a NotFoundError carrying an HTTP 404,
+  // whose message is just the status text "Not Found". RPC (used by the
+  // contract reads) spells it out in the message instead. Cover both: a 404
+  // response is the reliable signal, with the message as a fallback.
+  const status = (err as { response?: { status?: number } } | null)?.response?.status;
+  if (status === 404) return true;
   const message = err instanceof Error ? err.message : String(err ?? '');
   return /account not found|NotFound/i.test(message);
 }

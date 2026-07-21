@@ -176,10 +176,26 @@ describe('isAccountNotFound', () => {
     expect(isAccountNotFound(new Error('NotFound'))).toBe(true);
   });
 
+  it('recognises the Horizon 404 an unfunded account produces', () => {
+    // stellar-helper.getBalance loads the account from Horizon, not RPC. A
+    // missing account there throws a NotFoundError whose message is the HTTP
+    // status text "Not Found" (with a space) and which carries a 404 response.
+    // Neither the "account not found" nor the "NotFound" spelling appears, so
+    // matching on the message alone misses it.
+    const horizonError = Object.assign(new Error('Not Found'), {
+      response: { status: 404 },
+    });
+    expect(isAccountNotFound(horizonError)).toBe(true);
+  });
+
   it('does not swallow unrelated failures', () => {
     // These need to surface as real errors, not a "go fund your wallet" nudge.
     expect(isAccountNotFound(new Error('RPC unreachable'))).toBe(false);
     expect(isAccountNotFound(new Error('Timed out'))).toBe(false);
+    // A non-404 HTTP failure is a real fault, not an empty account.
+    expect(
+      isAccountNotFound(Object.assign(new Error('Server Error'), { response: { status: 500 } }))
+    ).toBe(false);
     expect(isAccountNotFound(undefined)).toBe(false);
   });
 });

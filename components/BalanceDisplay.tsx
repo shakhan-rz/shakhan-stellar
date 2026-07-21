@@ -14,6 +14,7 @@
 
 import { useState, useEffect } from 'react';
 import { stellar } from '@/lib/stellar-helper';
+import { isAccountNotFound } from '@/lib/amounts';
 import { FaSync, FaCoins } from 'react-icons/fa';
 import { Card } from './example-components';
 
@@ -26,6 +27,10 @@ export default function BalanceDisplay({ publicKey }: BalanceDisplayProps) {
   const [assets, setAssets] = useState<Array<{ code: string; issuer: string; balance: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // A brand new wallet has no account on the ledger until Friendbot funds it.
+  // That is an expected first-run state, not an error, so we point the user at
+  // Friendbot instead of alerting a raw "failed to fetch balance".
+  const [needsFunding, setNeedsFunding] = useState(false);
 
   const fetchBalance = async () => {
     try {
@@ -33,9 +38,14 @@ export default function BalanceDisplay({ publicKey }: BalanceDisplayProps) {
       const balanceData = await stellar.getBalance(publicKey);
       setBalance(balanceData.xlm);
       setAssets(balanceData.assets);
+      setNeedsFunding(false);
     } catch (error) {
-      console.error('Error fetching balance:', error);
-      alert('Failed to fetch balance. Please try again.');
+      if (isAccountNotFound(error)) {
+        setNeedsFunding(true);
+      } else {
+        console.error('Error fetching balance:', error);
+        alert('Failed to fetch balance. Please try again.');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -62,6 +72,44 @@ export default function BalanceDisplay({ publicKey }: BalanceDisplayProps) {
         <div className="animate-pulse">
           <div className="h-16 bg-white/5 rounded-lg mb-4"></div>
           <div className="h-10 bg-white/5 rounded-lg w-1/2"></div>
+        </div>
+      </Card>
+    );
+  }
+
+  if (needsFunding) {
+    return (
+      <Card>
+        <div className="flex items-center gap-2 mb-4">
+          <FaCoins className="text-yellow-400 shrink-0" />
+          <h2 className="text-2xl font-bold text-white">Your Balance</h2>
+        </div>
+        <div className="bg-white/5 border border-white/10 rounded-xl p-6 text-center">
+          <p className="text-4xl mb-3">🚀</p>
+          <p className="text-white font-semibold mb-2">
+            This wallet needs testnet XLM first
+          </p>
+          <p className="text-white/60 text-sm mb-5">
+            Your account is not on the ledger yet. Fund it once with the free
+            testnet faucet, then reload.
+          </p>
+          <a
+            href={`https://friendbot.stellar.org/?addr=${publicKey}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block bg-yellow-500 hover:bg-yellow-400 text-black font-semibold px-5 py-2.5 rounded-lg transition-colors"
+          >
+            Fund with Friendbot
+          </a>
+          <div className="mt-4">
+            <button
+              onClick={fetchBalance}
+              disabled={refreshing}
+              className="text-neutral-300 hover:text-white disabled:opacity-50 text-sm underline transition-colors"
+            >
+              {refreshing ? 'Checking…' : "I funded it — check again"}
+            </button>
+          </div>
         </div>
       </Card>
     );
