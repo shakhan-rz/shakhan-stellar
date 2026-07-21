@@ -117,6 +117,33 @@ describe('FundCampaign', () => {
     expect(rows[0]).not.toHaveTextContent('(you)');
   });
 
+  it('still lets you contribute after the goal is reached', async () => {
+    // The contract accepts contributions right up to the deadline, goal or
+    // no goal (over-funding is how this campaign passed 100 XLM). The form
+    // must stay open so the badge/leaderboard race can continue — hiding it
+    // at the goal would contradict the contract.
+    mocks.getCampaign.mockResolvedValue({
+      ...campaign,
+      raisedStroops: 1_680_000_000n, // 168 XLM, past the 100 XLM goal
+    });
+    render(<FundCampaign publicKey={ME} />);
+    await waitFor(() => expect(screen.getByText(/goal reached/i)).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /contribute/i })).toBeInTheDocument();
+  });
+
+  it('hides the contribute form once the deadline has passed', async () => {
+    // A closed campaign is genuinely over — the contract rejects late
+    // contributions with DeadlinePassed, so the form should be gone.
+    mocks.getCampaign.mockResolvedValue({
+      ...campaign,
+      deadline: Math.floor(Date.now() / 1000) - 60, // a minute ago
+    });
+    render(<FundCampaign publicKey={ME} />);
+    await waitFor(() => expect(screen.getAllByText(/closed/i).length).toBeGreaterThan(0));
+    expect(screen.queryByRole('button', { name: /contribute/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Open')).not.toBeInTheDocument();
+  });
+
   it('surfaces a load failure instead of showing stale zeros', async () => {
     mocks.getCampaign.mockRejectedValue(new Error('RPC unreachable'));
     render(<FundCampaign publicKey={ME} />);

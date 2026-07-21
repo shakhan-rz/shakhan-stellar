@@ -388,8 +388,10 @@ export default function FundCampaign({ publicKey, onSuccess }: FundCampaignProps
             </div>
           )}
 
-          {/* Contribute form */}
-          {!isClosed && !goalReached && (
+          {/* Contribute form. Open until the deadline regardless of the goal:
+              the contract accepts over-funding, and keeping it open lets the
+              badge/leaderboard race carry on past 100%. */}
+          {!isClosed && (
             <div className="space-y-3">
               <Input
                 label="Amount to contribute (XLM)"
