@@ -104,14 +104,16 @@ Orange Belt is about production-grade smart-contract work. The Fund tab is now b
 | **Address** | [`CDARMHEBXGGGVQ53GASWRQHWDCVVB7O6SXZLZY47PTPINF6DDZWW4DNZ`](https://stellar.expert/explorer/testnet/contract/CDARMHEBXGGGVQ53GASWRQHWDCVVB7O6SXZLZY47PTPINF6DDZWW4DNZ) | [`CBACUDL2SDBNBPDBDBFND6LQYZW25LKNFWWXZSWI277TA5WHXYFFU3WY`](https://stellar.expert/explorer/testnet/contract/CBACUDL2SDBNBPDBDBFND6LQYZW25LKNFWWXZSWI277TA5WHXYFFU3WY) |
 | **WASM hash** | `0ded1560f80e4087ca634bf992fa370d42c0c8deaf3758abcad28ab8fe29eaa4` | `c7945fc91cb1024bbb9ec9853f4ec2dd1f152084cdcbe15598c82246c57c3298` |
 | **Network** | Testnet (`Test SDF Network ; September 2015`) | same |
-| **Deploy tx** | `<TODO: paste crowdfunding deploy tx hash>` | `<TODO: paste badge deploy tx hash>` |
+| **Deploy tx** | [`e2f7be1ede7c…`](https://stellar.expert/explorer/testnet/tx/e2f7be1ede7c0d0cb4addb9c7c072469200b4365c335c66dd62893d70e7f8337) | [`1ae424906e1a…`](https://stellar.expert/explorer/testnet/tx/1ae424906e1a2685cd6b6815db13f88dfb44b4827cf32cb027b6813a40584dd2) |
 | **Source** | `contracts/contracts/crowdfunding/src/lib.rs` | `contracts/contracts/badge/src/lib.rs` |
 
 > ✅ Both contracts are live and wired: at the time of writing the campaign has raised **168 XLM** toward its 100 XLM goal, and the badge registry reports its Silver/Gold thresholds (5 / 20 XLM) — read straight off-chain via RPC simulation.
 
-**Verifiable contract-to-contract call** (a `contribute` that also awarded a badge, three events in one transaction):
+**Verifiable contract-to-contract call** — a `contribute` from the Fund tab, signed by a browser wallet, that flowed straight through to the badge registry:
 
-**🔗 `<TODO: paste a successful contribute tx hash>`**
+**🔗 [`1f1224c61f6d61afad888446ba9e3274b2762b49843d848947765d2b3425a735`](https://stellar.expert/explorer/testnet/tx/1f1224c61f6d61afad888446ba9e3274b2762b49843d848947765d2b3425a735)**
+
+> Status `SUCCESS` · `invoke_host_function` → `contribute(donor, amount)` on `CDARMHEB…4DNZ`, which in turn called `award(…)` on `CBACUDL2…U3WY`. Confirmed 2026-07-20.
 
 ### Inter-contract communication
 
